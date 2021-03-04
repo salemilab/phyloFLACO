@@ -1,0 +1,299 @@
+
+Part of flaco workflow:
+1. Load basement module:
+    ml basemount
+2. Create folder to copy files and basemount:
+	mkdir COVID_FL_<date>
+	basemount COVID_FL_<date>
+	cd Projects/<BaseSpace project name>/AppResults
+3. Copy consensus fasta files from Basespace:
+	cp ./*/Files/consensus/*.fasta <hipergator dir>
+4. Combine fasta for each sample into single fasta file:
+	cat *.fasta <combined.fasta>
+5. Add dates to fasta headers using table with sample number (first number in fasta header) as reference and reformat according to GISAID header format	
+6. Pull newly added Florida sequences from GISAID database and add to previous fasta
+7. Use python script to filter sequences based on high N content (currently allowing 30%); alternative is faFilterN (using module load ucsc-fafiltern)
+	/blue/salemi/share/flaco/bin/seq_cleaner.py -f 30 <combined.fasta> <out.fasta>
+8. BLAST against GISAID global database using FLACO procedure, selecting among non-Floridian sequences
+9. Align sequences using viralMSA
+	ml viralmsa
+	ViralMSA.py -s <cleaned.fasta> -t <threads> -r SARS-CoV-2 -e <email> -o Florida_aln
+10. Mask known sequence error sites (with 'N') using mask_aln_using_vcf.py
+	python mask_aln_using_vcf.py -i *fa.aln -o output_masked_msa.fasta -v problematic_sites_sarsCov2.vcf --reference_id NC_045512.2
+
+
+
+		
+# Generating initial tree and cluster identification #####################################
+
+1. Create metadata.csv BEFORE next step (pulls information from sequence headers):
+	ml R
+	Rscript <path/to>metadata.R
+
+2. Modify fasta to replace "|" and "/" in sequence names (IQ-TREE and Pangolin do this, which gets frustrating later on):
+	cat /path/to/input.fasta | sed 's$|$_$g' | sed 's$/$_$g' > initial_${today}.fasta
+
+3. Create a file with dates for later referencing and a variable ("today") from the dates file to help with naming:
+	echo $(date +"%Y-%m-%d") > dates.txt
+	today=$( tail -n 1 dates.txt )
+     
+4.  Create ML tree using IQ-TREE job script (which will automatically run on a fasta file):
+	sbatch iqtree.sh
+
+While IQ-TREE running, can:
+	
+	2. Run pangolin on fasta sequences to obtain lineage information
+		mkdir pangolin_output
+		module load pangolin/2.1.7
+		pangolin -lv # report lineage version information for publication purposes
+		pangolin initial_${today}.fasta -o pangolin_output --outfile initial_${today}_pangolin_out.csv -t 4
+	
+	3. Make sure number of pangolin output sequences is same as fasta (known to be buggy!):
+		grep ">" ./initial_${today}.fasta | wc -l
+		wc -l ./pagolin_output/initial_${today}_pangolin_out.csv
+	
+	4. 	Merge lineage assignments with an existing metadata file (in current folder) using R script:
+		ml R
+		Rscript <path/to>metadata.R	
+	
+	5. Copy FaToVcf to working directory (required for UShER):
+		rsync -aP rsync://hgdownload.soe.ucsc.edu/genome/admin/exe/linux.x86_64/faToVcf .
+		chmod +x faToVcf
+
+6. When tree finished, run DYNAMITE to identify clusters using tree and metadata:
+	sbatch dynamite.sh
+	
+7. Create cov_reference folder and copy cov_reference.fasta
+	mkdir cov_reference
+	cp /path/tocov_reference.fasta ./cov_reference
+
+
+
+
+
+
+## Once dynamite finished...##############################################################
+
+8. Move initial tree data:
+	mkdir initial_tree_data
+	mv dynamite_*.tree initial_tree_data
+	mv initial_${today}* initial_tree_data
+		
+9. Add reference sequence to subtree alignments:
+	for x in ./*.fasta; do cat ./cov_reference/cov_reference.fasta >> ${x}; done
+
+10. Copy fastas into separate folders for transformation into vcfs
+	for x in ./*.fasta; do mkdir ${x%.*}_${today} && mv ${x} ${x%.*}_${today}; done
+	
+12. Create a source file to perform transformations	
+	find . -type d -print > source.txt
+	sed -i '/initial_tree_data/d' source.txt
+	sed -i '/cov_reference/d' source.txt
+	sed -i '/usher_results/d' source.txt
+	sed -i '/\.$/d' source.txt
+	
+13. Perform transformations for each folder in source file
+	ml python
+	for i in $(cat source.txt); do python Fasta2UShER.py -inpath ${i} -output ${i}.vcf -reference ./cov_reference/cov_reference.fasta; done
+	
+14. Perform subtree pre-processing 
+	ml usher/0.1.4	
+	for i in ./*.tree; do usher -v ${i%.tree}.vcf -t ${i} -T 4 -c -u -d ./${i%.tree} -o ${i%.tree}.pb; done
+ 
+
+
+
+
+
+
+#############################################################################################################################
+
+# Once new samples are ready... (In comes Alberto to save the day) ##########################################################
+	
+1. Update (assuming existing) dates.txt file with new date and assign current ("today") and previous ("previous") date variables:
+	echo $(date +"%Y-%m-%d") >> dates.txt
+	today=$(tail -n 1 dates.txt)
+	previous=$(sed 'x;$!d' <dates.txt)
+
+2. Make new directory for new round of samples and add fasta:
+	mkdir ./samples_${today}
+	scp <local folder>/samples_${today}.fasta ./samples_${today}
+
+3. Update metadata file (need sequences in original GISAID format) and will also need to figure something out regarding patient data coming from Melanie:
+	ml R
+	Rscript metadata.R -f ./samples_${today}/samples_${today}.fasta
+
+4. Modify fasta to replace "|" and "/" in sequence names (IQ-TREE and Pangolin do this, which gets frustrating later on):
+	cat ./samples_${today}/samples_${today}.fasta | sed 's$|$_$g' | sed 's$/$_$g' > samples_${today}.fasta
+
+5. Determine lineages for new fasta:
+	cd samples_${today}
+	mkdir pangolin_output
+	ml pangolin/2.1.7
+	pangolin samples_${today}_renamed.fasta -o pangolin_output --outfile samples_${today}_pangolin_out.csv -t 4
+
+6. Update metadata file with pangolin output (lineage information) for new sequence data:
+	ml R
+	Rscript ../metadata.R -f ./samples_${today}/samples_${today}.fasta -l ./samples_${today}/pangolin_output/samples_${today}_pangolin_out.csv
+	
+7. Add cov_reference to new samples:	
+	cat ./cov_reference/cov_reference.fasta >> samples_${today}/samples_${today}.fasta
+  	
+8. Create vcf for new round of samples:
+	ml python
+	python Fasta2UShER.py -inpath samples_${today} -output samples_${today}.vcf -reference ./cov_reference/cov_reference.fasta
+		
+9. Compute parsimony score for new samples (vcf) assigned to each annotated tree (.pb files):
+	ml usher
+	for i in ./*_${previous}.pb; do 
+	mkdir ${i%_${previous}*}_${today};
+	usher -i ${i} -v samples_${today}.vcf -p -d ${i%_${previous}*}_${today};
+	done
+	
+10. Previous step will generate parsimony scores in tsv files, which we need to rename and copy to single folder for R analysis:
+	mkdir "BPS_${today}"
+	for i in ./*_${today}; do cp ${i}/parsimony-scores.tsv BPS_${today}/${i}_parsimony-scores.tsv; done
+	
+11. Use R script to evaluate parsimony scores from tsv files and output new fasta files for sequences needing to be placed on trees:
+	cd BPS_${today}
+	ml R
+	Rscript ../branch_support_eval.R 
+
+12. Add reference sequence again to each of the newly generated fasta files:
+	for i in ./*.fasta; do cat ../cov_reference/cov_reference.fasta >> ${i}; done
+
+13. Place updated fasta in new folders:
+	for i in ./*.fasta; do mkdir .${i%.fasta}; cp ${i} .${i%.fasta}; done
+	cd ../
+	
+14. Replace old folders in source.txt file with updated folders:
+	find . -type d -name "*${today}_updated" > source.txt
+
+15. Transform new fastas into individual vcfs:
+	ml python
+	for i in $(cat source.txt); do python Fasta2UShER.py -inpath ${i} -output ${i%_updated}.vcf -reference ./cov_reference/cov_reference.fasta; done
+	
+16. Officially add samples to all old trees using usher (creating new pb files for today):
+	ml usher
+	for i in $(cat source.txt); do usher -i ${i%_${today}*}_${previous}.pb -v ${i%_updated}.vcf -u -d ${i} -o ${i%_updated}.pb; done	
+	
+17. Not all trees (.pb) are going to be updated with sequences, so need to find all trees without today's date and make a copy of previous pb with today's date:
+	for i in ./*${previous}.pb; do mv -vn ${i} ${i%_${previous}*}_${today}.pb; done
+
+18. Move new unannotated tree (.nh) files generated from the previous step into one folder (as well as original combined sample fasta) for characterization:
+	mkdir "trees_${today}"
+	for i in $(cat source.txt); do cp ${i}/*final-tree.nh trees_${today}/${i}.tree; done
+	cp ./samples_${today}/*.fasta trees_${today}
+	
+19. Run R script to characterize added sequences (add new folder to save discard results):	# This needs to be modified so that when discard tree exists, it will create just a fasta that will need to be processed
+	mkdir "./discard_${today}"
+	cd trees_${today}
+	ml R
+	Rscript ../fitness_calc.R
+	
+19. If discard tree not present, create one. If so, process fasta from previous step and add to existing annotated tree, and also update source.txt file
+	if [ ! -e "discard_${previous}.vcf" ]; then
+       cd 	../discard_${today}; sbatch ../iqtree.sh;
+      else
+    	cat ./cov_reference/cov_reference.fasta >> ./discard_${today}_updated/*.fasta
+		ml python
+		python Fasta2UShER.py -inpath discard_${today}_updated -output discard_${today}.vcf -reference ./cov_reference/cov_reference.fasta	
+		ml usher
+		usher -v discard_${today}.vcf -t ./discard_${today}_updated.tree -T 4 -c -u -d ./discard_${today}_updated -o discard_${today}.pb
+		echo "discard_${today}_updated" >> source.txt
+	fi 
+
+20. If first condition met above, then need to pre-process tree and fasta (but somehow need to make sure iqtree is finished:
+	
+	#Find a way to determine if iqtree job was submitted and if job is finished. Once job is finished (if needed),
+	    
+	cat ./cov_reference/cov_reference.fasta >> ./discard_${today}_updated/*.fasta
+	ml python
+	python Fasta2UShER.py -inpath discard_${today}_updated -output discard_${today}.vcf -reference ./cov_reference/cov_reference.fasta	
+	ml usher
+	usher -v discard_${today}.vcf -i ./discard_${previous}.pb -T 4 -c -u -d ./discard_${today}_updated -o discard_${today}.pb
+
+
+21. While discard tree being reconstructed, place pruned background sequences onto previous annotated tree:
+	cd ../background_${today}_updated
+	rm -v !(*.fasta)
+	cd ../
+	ml python
+	python Fasta2UShER.py -inpath ./background_${today}_updated -output ./background_${today}.vcf -reference ./cov_reference/cov_reference.fasta
+	ml usher
+	usher -v background_${today}.vcf -i ./background_${previous}.pb -T 4 -c -u -d ./background_${today}_updated -o background_${today}.pb
+	
+
+22. Concatenate previous fasta with updated fasta for tree optimization (while removing all instances of refseq):
+	for i in $(cat source.txt); do 
+	head -n -2 ${i}/*.fasta > ${i}/full.fasta;
+	head -n -2 ${i%_${today}*}_${previous}/*.fasta >> ${i}/full.fasta
+	done
+
+23. Force bifurcating tree in R:
+	ml R
+	for i in $(cat source.txt); do Rscript ./bifurcate.R -t ${i}/uncondensed-final-tree.nh; done
+
+ 
+24. Re-optimize trees (only those that were updated) using FastTree: 
+	cat ./cov_reference/cov_reference.fasta >> ./background_${today}/full.fasta # This is because refseq should actually be included in the background
+	module load fasttree/2.1.7
+	for i in $(cat source.txt); do FastTreeMP -nt -gamma -nni 0 -spr 2 -sprlength 1000 -boot 100 -log fasttree.log -intree ${i}/*.nh.tree ${i}/full.fasta > ${i}/reop.tree; done
+	
+
+25. Re-annotate updated fasttree trees (replace old ones):
+	ml usher
+	for i in ${cat source.txt); do
+  	usher -v ${i%_updated}.vcf -t ${i}/reop.tree -T 4 -c -u -d ${i} -o ${i%_updated}.pb;
+  	done
+
+26. Test background and discard trees for clusters (separate R script using actual branchwise algorithm). R script will write new results for discard pile to a new folder, but will write results from background to same folder.
+	IF no clusters are found, results are not written, but downstream steps require that the new discard folder exist, so need to copy over.
+
+	mkdir ./discard_${today}_updated
+	cd ./discard_${today}
+	Rscript ../branchwise.R -t *.treefile -p ../discard_${today}_updated
+	
+	cd ../background_${today}_updated
+	Rscript ../branchwise.R -t reop.tree -p ./
+	cd ../
+		
+27. Process fasta and tree for background (will require determining if new files added as a result of R script in step above)
+
+	cat ./cov_reference/cov_reference.fasta >> ./background_${today}_updated/*.fasta
+	find . -type f -name "background_${today}_updated.tree" -empty -exec cp ./background_${today}/reop.tree ./background_${today}_updated.tree
+	ml python
+	python Fasta2UShER.py -inpath background_${today}_updated -output background_${today}.vcf -reference ./cov_reference/cov_reference.fasta	
+	ml usher
+	usher -v background_${today}.vcf -t ./background_${today}_updated.tree -T 4 -c -u -d ./background_${today}_updated -o background_${today}.pb
+	
+28. Add reference sequence to new cluster fastas and place in new directories:
+	for i in ./*.fasta; do  cat ./cov_reference/cov_reference.fasta >> ${i}; cp ${i} .${i%.fasta}; done
+	
+29. Update source.txt file with new clusters and process fastas:
+	
+	for i in ./*.fasta; do mkdir .${i%.fasta}; echo ${i%.fasta} > source.txt; done	
+	ml python
+	for i in $(cat source.txt); do python Fasta2UShER.py -inpath ${i} -output ${i}.vcf -reference ./cov_reference/cov_reference.fasta; done
+	
+30. Perform subtree pre-processing for new clusters:
+	ml usher/0.1.4	
+	for i in $(cat source.txt); do usher -v ${i}.vcf -t ${i}.tree -T 4 -c -u -d ./${i} -o ${i}.pb; done
+
+
+
+
+	
+	
+	
+	
+
+			
+			
+
+
+
+
+
+
+
