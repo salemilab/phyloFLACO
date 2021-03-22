@@ -15,12 +15,13 @@ Part of flaco workflow:
 7. BLAST against GISAID global database using FLACO procedure, selecting among non-Floridian sequences
 8. Use python script to filter sequences based on high N content (currently allowing 30%); alternative is faFilterN (using module load ucsc-fafiltern)
 	/blue/salemi/share/flaco/bin/seq_cleaner.py -f 30 <combined.fasta> <cleaned.fasta>
-9. Align sequences using viralMSA
-	ml viralmsa
-	ViralMSA.py -s <cleaned.fasta> -t <threads> -r SARS-CoV-2 -e <email> -o <out.aln> -r MN908947
-10. Mask known sequence error sites (with 'N') using mask_aln_using_vcf.py
-	python mask_aln_using_vcf.py -i *fa.aln -o output_masked_msa.fasta -v problematic_sites_sarsCov2.vcf
+9. Align sequences using mafft
+	mafft --thread -1 input.fasta > output.fasta
+	mafft --retree 3 --maxiterate 10 --thread -1 --nomemsave --op 10 seqsCausingInsertionsInRef.fasta > seqsCausingInsertionsInRef_aligned.fasta
+	mafft --thread 1 --quiet --keeplength --add sequencesNotCausingInsertionsInRef.fa seqsCausingInsertionsInRef_aligned.fasta > msa_<date>.fasta
 
+10. Mask known sequence error sites (with 'N') using mask_aln_using_vcf.py
+	python mask_aln_using_vcf.py -i mas_<date>.fasta -o msa_masked_<date>.fasta -v problematic_sites_sarsCov2.vcf
 
 
 
@@ -31,7 +32,7 @@ Part of flaco workflow:
 	ml R
 	Rscript <path/to>metadata.R
 
-2. Modify fasta to replace "|" and "/" in sequence names (IQ-TREE and Pangolin do this, which gets frustrating later on):
+2. Modify fasta to replace "|" and "/" in sequence names (Pangolin does this, which gets frustrating later on):
 	cat /path/to/input.fasta | sed 's$|$_$g' | sed 's$/$_$g' > initial_${today}.fasta
 
 3. Create a file with dates for later referencing and a variable ("today") from the dates file to help with naming:
