@@ -16,7 +16,7 @@ Part of flaco workflow:
 8. Use python script to filter sequences based on high N content (currently allowing 30%); alternative is faFilterN (using module load ucsc-fafiltern)
 	/blue/salemi/share/flaco/bin/seq_cleaner.py -f 30 <combined.fasta> <cleaned.fasta>
 9. Align sequences using mafft
-	(1) Each sequence is individually aligned to the reference hCoV-19/Wuhan/WIV04/2019 (EPI_ISL_402124). Sequences that created dubious insertions of >=30 nucleotides in the reference sequence and occurred only once in the database are discarded. The alignments are created with the command:
+	(1) Each sequence is individually aligned to the reference (MN908947). Sequences that created dubious insertions of >=30 nucleotides in the reference sequence and occurred only once in the database are discarded. The alignments are created with the command:
 	mafft --thread -1 input.fasta > output.fasta
 	(2) All sequences that result in insertions in the reference from (1) are then aligned with a opening gap penalty of 10 to prevent long stretches of dubious insertions in the alignment due to the presence of long stretches of NNNNs. The following command is used:
 	mafft --retree 3 --maxiterate 10 --thread -1 --nomemsave --op 10 seqsCausingInsertionsInRef.fasta > seqsCausingInsertionsInRef_aligned.fasta
