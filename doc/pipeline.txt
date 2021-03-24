@@ -1,5 +1,4 @@
-
-Part of flaco workflow:
+## FLACO-BLAST ###############################################################################
 
 1. Load basement module:
     ml basemount
@@ -37,7 +36,7 @@ Part of flaco workflow:
 	grep -o "-" <cleaned_mod_aln.fasta> | wc -l | awk '$1>300{c++} END{print c+0}'
 
 11. Check for gaps in reference sequence. If found, need to either use mafft or report in metadata file:
-	head -n 2 cov_reference.fasta | tail -n 1 | grep -o "-" | wc -l
+	head -n 2 <cleaned_mod_aln.fasta> | tail -n 1 | grep -o "-" | wc -l
 
 11.5 (If mafft necessary):
 	ml mafft
