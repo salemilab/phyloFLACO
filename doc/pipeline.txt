@@ -23,22 +23,29 @@ Part of flaco workflow:
 
 8. Use python script to filter sequences based on high N content (currently allowing 30%); alternative is faFilterN (using module load ucsc-fafiltern)
 	/blue/salemi/share/flaco/bin/seq_cleaner.py -f 30 <combined.fasta> <cleaned.fasta>
+	
+9. Remove entirely (replace with "") stretches of >300 Ns from sequences:
+	sed "/N{300,}//" <cleaned.fasta> > <cleaned_mod.fasta>
 
 9. Align sequences using viralmsa
 
 	mkdir <output_dir> 
 	ml viralmsa
-	ViralMSA.py -s <input_seqs> -t 4 -e brittany.rife@ufl.edu -o <output_dir> -r MN908947
+	ViralMSA.py -s <input_seqs> -t 4 -e brittany.rife@ufl.edu -o <output_dir> --outfile <cleaned_mod_aln.fasta> -r MN908947
+	
+10. Check for extensive gaps in sequences	(may need to reduce sed command above)
+	grep -o "-" <cleaned_mod_aln.fasta> | wc -l | awk '$1>300{c++} END{print c+0}'
 
-10. Check for gaps in reference sequence. If found, need to use mafft:
-	head -n 2 cov_reference.fasta | tail -n 1 | grep "-" | wc -l
+11. Check for gaps in reference sequence. If found, need to either use mafft or report in metadata file:
+	head -n 2 cov_reference.fasta | tail -n 1 | grep -o "-" | wc -l
 
+11.5 (If mafft necessary):
 	ml mafft
 	mafft --thread -1 input.fasta > output.fasta
 	mafft --retree 3 --maxiterate 10 --thread -1 --nomemsave --op 10 seqsCausingInsertionsInRef.fasta > seqsCausingInsertionsInRef_aligned.fasta
 	mafft --thread 1 --quiet --keeplength --add sequencesNotCausingInsertionsInRef.fa seqsCausingInsertionsInRef_aligned.fasta > msa_<date>.fasta
 
-11. Mask known sequence error sites (with 'N') using mask_aln_using_vcf.py
+12. Mask known sequence error sites (with 'N') using mask_aln_using_vcf.py
 	python mask_aln_using_vcf.py -i mas_<date>.fasta -o msa_masked_<date>.fasta -v problematic_sites_sarsCov2.vcf
 
 
