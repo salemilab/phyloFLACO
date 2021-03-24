@@ -1,29 +1,44 @@
 
 Part of flaco workflow:
+
 1. Load basement module:
     ml basemount
+
 2. Create folder to copy files and basemount:
 	mkdir COVID_FL_<date>
 	basemount COVID_FL_<date>
 	cd Projects/<BaseSpace project name>/AppResults
+
 3. Copy consensus fasta files from Basespace:
 	cp ./*/Files/consensus/*.fasta <hipergator dir>
+
 4. Combine fasta for each sample into single fasta file:
 	cat *.fasta <combined.fasta>
+
 5. Add dates to fasta headers using table with sample number (first number in fasta header) as reference and reformat according to GISAID header format	
+
 6. Pull newly added Florida sequences from GISAID database and add to previous fasta
+
 7. BLAST against GISAID global database using FLACO procedure, selecting among non-Floridian sequences
+
 8. Use python script to filter sequences based on high N content (currently allowing 30%); alternative is faFilterN (using module load ucsc-fafiltern)
 	/blue/salemi/share/flaco/bin/seq_cleaner.py -f 30 <combined.fasta> <cleaned.fasta>
-9. Align sequences using mafft
-	(1) Each sequence is individually aligned to the reference (MN908947). Sequences that created dubious insertions of >=30 nucleotides in the reference sequence and occurred only once in the database are discarded. The alignments are created with the command:
+
+9. Align sequences using viralmsa
+
+	mkdir <output_dir> 
+	ml viralmsa
+	ViralMSA.py -s <input_seqs> -t 4 -e brittany.rife@ufl.edu -o <output_dir> -r MN908947
+
+10. Check for gaps in reference sequence. If found, need to use mafft:
+	head -n 2 cov_reference.fasta | tail -n 1 | grep "-" | wc -l
+
+	ml mafft
 	mafft --thread -1 input.fasta > output.fasta
-	(2) All sequences that result in insertions in the reference from (1) are then aligned with a opening gap penalty of 10 to prevent long stretches of dubious insertions in the alignment due to the presence of long stretches of NNNNs. The following command is used:
 	mafft --retree 3 --maxiterate 10 --thread -1 --nomemsave --op 10 seqsCausingInsertionsInRef.fasta > seqsCausingInsertionsInRef_aligned.fasta
-	(3) The rest of the sequences that did not result in insertions are aligned to the resulting alignment in step (2) with this command:
 	mafft --thread 1 --quiet --keeplength --add sequencesNotCausingInsertionsInRef.fa seqsCausingInsertionsInRef_aligned.fasta > msa_<date>.fasta
 
-10. Mask known sequence error sites (with 'N') using mask_aln_using_vcf.py
+11. Mask known sequence error sites (with 'N') using mask_aln_using_vcf.py
 	python mask_aln_using_vcf.py -i mas_<date>.fasta -o msa_masked_<date>.fasta -v problematic_sites_sarsCov2.vcf
 
 
