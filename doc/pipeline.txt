@@ -30,32 +30,30 @@
 
 	ml dibig_tools
 	/blue/salemi/share/flaco/bin/flaco_blast.sh makedb <gisaid.fa> USA/FL
+	Remove gaps....? # Currently just using Aliview		
 	/blue/salemi/share/flaco/bin/flaco_blast.sh run <samples_florida.fasta> <gisaid.clean.fa>
 	cat <samples_florida.fasta> <gisaid.clean.out.fa> > <combined_<date>.fa>
 	
-9. If you want to be more stringent than a 30% ambiguous cutoff, you want to use python script again to filter sequences again (just in case) based on high N content (currently allowing 30%); alternative is faFilterN (using module load ucsc-fafiltern)
-		COVIDseq-data/bin/seq_cleaner.py -f 30 <combined.fasta> <cleaned.fasta>
 	
-
-10. Align sequences using viralmsa:
+9. Align sequences using viralmsa:
 
 	mkdir <output_dir> 
 	ml viralmsa
 	ViralMSA.py -u -s <input_seqs> -t 4 -e brittany.rife@ufl.edu -o <output_dir> --outfile <cleaned_mod_aln.fasta> -r MN908947
 	
-11. Check for extensive gaps in sequences	(may need to reduce sed command above)
+10. Check for extensive gaps in sequences	(may need to reduce sed command above)
 	grep -o "-" <cleaned_mod_aln.fasta> | wc -l | awk '$1>300{c++} END{print c+0}'
 
-12. Check for gaps in reference sequence. If found, need to either use mafft or report in metadata file:
+11. Check for gaps in reference sequence. If found, need to either use mafft or report in metadata file:
 	head -n 2 <cleaned_mod_aln.fasta> | tail -n 1 | grep -o "-" | wc -l
 
-12.5 (If mafft necessary):
+11.5 (If mafft necessary):
 	ml mafft
 	mafft --thread -1 input.fasta > output.fasta
 	mafft --retree 3 --maxiterate 10 --thread -1 --nomemsave --op 10 seqsCausingInsertionsInRef.fasta > seqsCausingInsertionsInRef_aligned.fasta
 	mafft --thread 1 --quiet --keeplength --add sequencesNotCausingInsertionsInRef.fa seqsCausingInsertionsInRef_aligned.fasta > msa_<date>.fasta
 
-13. Mask known sequence error sites (with 'N') using mask_aln_using_vcf.py
+12. Mask known sequence error sites (with 'N') using mask_aln_using_vcf.py
 	python mask_aln_using_vcf.py -i mas_<date>.fasta -o msa_masked_<date>.fasta -v problematic_sites_sarsCov2.vcf
 
 
@@ -219,7 +217,16 @@ While IQ-TREE running, can:
 	for i in $(cat source.txt); do cp ${i}/*final-tree.nh trees_${today}/${i}.tree; done
 	cp ./samples_${today}/*.fasta trees_${today}
 	
-19. Run R script to characterize added sequences (add new folder to save discard results):	# This needs to be modified so that when discard tree exists, it will create just a fasta that will need to be processed
+19. Run modified DYNAMITE to search for (and prune) clusters within background tree:
+	cd ./background_${today}
+	# Need to run on trees_${today}/background.tree though!
+	# Identify clusters that contain new sequence data
+	# Move clusters to main folder (need to come up with new cluster name so not copied, like "_bg")
+	# Prune clusters from tree
+	# Save tree in original folder (and update metadata file?) for next step.
+	
+
+20. Run R script to characterize added sequences (add new folder to save discard results):	# This needs to be modified so that when discard tree exists, it will create just a fasta that will need to be processed
 	mkdir "./discard_${today}"
 	cd trees_${today}
 	ml R
