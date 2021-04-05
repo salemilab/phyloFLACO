@@ -3,9 +3,10 @@
 1. Load basement module:
     ml basemount
 
-2. Create folder to copy files and basemount:
+2. Create folder to copy files and basemount (must be done in home directory and not in blue):
 	mkdir COVID_FL_<date>
 	basemount COVID_FL_<date>
+	cd COVID_FL_<date>
 	cd Projects/<BaseSpace project name>/AppResults
 
 3. Copy consensus fasta files from Basespace:
@@ -14,49 +15,47 @@
 4. Combine fasta for each sample into single fasta file:
 	cat *.fasta <combined.fasta>
 	
-5. Use python script to filter sequences again (just in case) based on high N content (currently allowing 30%); alternative is faFilterN (using module load ucsc-fafiltern)
-	/blue/salemi/share/flaco/bin/seq_cleaner.py -f 30 <combined.fasta> <cleaned.fasta>
-
-
-6. Rename sequences so that format similar to GISAID:
+5. Rename sequences so that format similar to GISAID:
 	????
 
-7. Pull newly added Florida sequences from GISAID database and add to previous fasta:
-	/blue/salemi//share/COVIDseq-data/bin/gisaidfilt.py -n USA/FL -a 2021-01-01_30 -b 2021-01-31+30 <florida.fa>
+6. Use python script to filter sequences again (just in case) based on high N content (currently allowing 30%); alternative is faFilterN (using module load ucsc-fafiltern)
+	/blue/salemi/share/flaco/bin/seq_cleaner.py -f 30 <combined.fasta> <cleaned.fasta>
+
+7. BLAST against GISAID global database using FLACO procedure, selecting among non-Floridian sequences:
+	upload up-to-date gisaid sequences in /blue/salemi/share/data/GISAID
+
+8. Pull newly added Florida sequences from GISAID database and add to previous fasta:
+	/blue/salemi/share/COVIDseq-data/bin/gisaidfilt.py <gisaid_msa.fasta> -n USA/FL -a 2020-11-25_15 -b 2021-01-31+15  -o <florida.fasta> 
 	cat <florida.fa> <cleaned.fasta> > <samples_florida.fasta>
 
-8. BLAST against GISAID global database using FLACO procedure, selecting among non-Floridian sequences:
-	upload up-to-date gisaid sequences in /blue/salemi/share/data/GISAID
-	
 	ml dibig_tools
-	/blue/salemi/share/flaco/bin/flaco_blast.sh makedb gisaid.fa ./gisaid-db
-	/blue/salemi/share/flaco/bin/flaco_blast.sh run target.fa ./gisaid-db/gisaid.sub.fa
+	/blue/salemi/share/flaco/bin/flaco_blast.sh makedb <gisaid.fa> USA/FL
+	/blue/salemi/share/flaco/bin/flaco_blast.sh run <samples_florida.fasta> <gisaid.clean.fa>
+	cat <samples_florida.fasta> <gisaid.clean.out.fa> > <combined_<date>.fa>
 	
-9. Use python script to filter sequences again (just in case) based on high N content (currently allowing 30%); alternative is faFilterN (using module load ucsc-fafiltern)
-	/blue/salemi/share/flaco/bin/seq_cleaner.py -f 30 <combined.fasta> <cleaned.fasta>
+9. If you want to be more stringent than a 30% ambiguous cutoff, you want to use python script again to filter sequences again (just in case) based on high N content (currently allowing 30%); alternative is faFilterN (using module load ucsc-fafiltern)
+		COVIDseq-data/bin/seq_cleaner.py -f 30 <combined.fasta> <cleaned.fasta>
 	
-10. Remove entirely (replace with "") stretches of >300 Ns from sequences:
-	sed "/N{300,}//" <cleaned.fasta> > <cleaned_mod.fasta>
 
-11. Align sequences using viralmsa:
+10. Align sequences using viralmsa:
 
 	mkdir <output_dir> 
 	ml viralmsa
-	ViralMSA.py -s <input_seqs> -t 4 -e brittany.rife@ufl.edu -o <output_dir> --outfile <cleaned_mod_aln.fasta> -r MN908947
+	ViralMSA.py -u -s <input_seqs> -t 4 -e brittany.rife@ufl.edu -o <output_dir> --outfile <cleaned_mod_aln.fasta> -r MN908947
 	
-12. Check for extensive gaps in sequences	(may need to reduce sed command above)
+11. Check for extensive gaps in sequences	(may need to reduce sed command above)
 	grep -o "-" <cleaned_mod_aln.fasta> | wc -l | awk '$1>300{c++} END{print c+0}'
 
-13. Check for gaps in reference sequence. If found, need to either use mafft or report in metadata file:
+12. Check for gaps in reference sequence. If found, need to either use mafft or report in metadata file:
 	head -n 2 <cleaned_mod_aln.fasta> | tail -n 1 | grep -o "-" | wc -l
 
-13.5 (If mafft necessary):
+12.5 (If mafft necessary):
 	ml mafft
 	mafft --thread -1 input.fasta > output.fasta
 	mafft --retree 3 --maxiterate 10 --thread -1 --nomemsave --op 10 seqsCausingInsertionsInRef.fasta > seqsCausingInsertionsInRef_aligned.fasta
 	mafft --thread 1 --quiet --keeplength --add sequencesNotCausingInsertionsInRef.fa seqsCausingInsertionsInRef_aligned.fasta > msa_<date>.fasta
 
-14. Mask known sequence error sites (with 'N') using mask_aln_using_vcf.py
+13. Mask known sequence error sites (with 'N') using mask_aln_using_vcf.py
 	python mask_aln_using_vcf.py -i mas_<date>.fasta -o msa_masked_<date>.fasta -v problematic_sites_sarsCov2.vcf
 
 
@@ -67,9 +66,6 @@
 1. Create metadata.csv BEFORE next step (pulls information from sequence headers):
 	ml R
 	Rscript <path/to>metadata.R
-
-2. Modify fasta to replace "|" and "/" in sequence names (Pangolin does this, which gets frustrating later on):
-	cat /path/to/input.fasta | sed 's$|$_$g' | sed 's$/$_$g' > initial_${today}.fasta
 
 3. Create a file with dates for later referencing and a variable ("today") from the dates file to help with naming:
 	echo $(date +"%Y-%m-%d") > dates.txt
