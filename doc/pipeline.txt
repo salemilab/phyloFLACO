@@ -19,47 +19,47 @@
 	????
 
 6. Use python script to filter sequences again (just in case) based on high N content (currently allowing 30%); alternative is faFilterN (using module load ucsc-fafiltern)
-	/blue/salemi/share/flaco/bin/seq_cleaner.py -f 30 <combined.fasta> <cleaned.fasta>
+	/blue/salemi/share/flaco/bin/seq_cleaner.py -f 30 <combined_<date>.fasta> <combined_cleaned_<date>.fasta>
 
 7. BLAST against GISAID global database using FLACO procedure, selecting among non-Floridian sequences:
 	upload up-to-date gisaid sequences in /blue/salemi/share/data/GISAID
 
 8. Pull newly added Florida sequences from GISAID database and add to previous fasta:
-	/blue/salemi/share/COVIDseq-data/bin/gisaidfilt.py <gisaid_msa.fasta> -n USA/FL -a 2020-11-25_15 -b 2021-01-31+15  -o <florida.fasta> 
-	cat <florida.fa> <cleaned.fasta> > <samples_florida.fasta>
+	/blue/salemi/share/COVIDseq-data/bin/gisaidfilt.py <gisaid_msa.fasta> -n USA/FL -a 2020-11-25_15 -b 2021-01-31+15  -o <florida_<date>.fasta> 
+	cat <florida_<date>.fa> <combined_cleaned_<date>.fasta> > <samples_florida_<date>.fasta>
 	
 9. Remove gaps in sequences for blast search:
-	/blue/salemi/share/flaco/bin/seq_cleaner.py -g <samples_florida.fasta> > <samples_florida_nogaps.fasta>		
+	/blue/salemi/share/flaco/bin/seq_cleaner.py -g <samples_florida_<date>.fasta> > <samples_florida_<date>_nogaps.fasta>		
 	
 
 10. Run flaco-blast:
 
 	ml dibig_tools
 	/blue/salemi/share/flaco/bin/flaco_blast.sh makedb <gisaid.fa> USA/FL
-	/blue/salemi/share/flaco/bin/flaco_blast.sh run <samples_florida_nogaps.fasta> <gisaid.clean.fa>
-	cat <samples_florida.fasta> <gisaid.clean.out.fa> > <combined_<date>.fa>
+	/blue/salemi/share/flaco/bin/flaco_blast.sh run <samples_florida_<date>_nogaps.fasta> <gisaid.clean.fa>
+	cat <samples_florida_<date>_nogaps.fasta> <gisaid.clean.out.fa> > <samples_florida_gisaid_<date>.fa>
 	
 	
 11. Align sequences using viralmsa:
 
 	mkdir <output_dir> 
 	ml viralmsa
-	ViralMSA.py -u -s <input_seqs> -t 4 -e brittany.rife@ufl.edu -o <output_dir> --outfile <cleaned_mod_aln.fasta> -r MN908947
+	ViralMSA.py -u -s <samples_florida_gisaid_<date>.fa> -t 4 -e brittany.rife@ufl.edu -o <output_dir> --outfile <samples_florida_gisaid_<date>.aln> -r MN908947
 	
 12. Check for extensive gaps in sequences	(may need to reduce sed command above)
-	grep -o "-" <cleaned_mod_aln.fasta> | wc -l | awk '$1>300{c++} END{print c+0}'
+	grep -o "-" <samples_florida_gisaid_<date>.aln> | wc -l | awk '$1>300{c++} END{print c+0}'
 
 13. Check for gaps in reference sequence. If found, need to either use mafft or report in metadata file:
-	head -n 2 <cleaned_mod_aln.fasta> | tail -n 1 | grep -o "-" | wc -l
+	head -n 2 <samples_florida_gisaid_<date>.aln> | tail -n 1 | grep -o "-" | wc -l
 
 13.5 (If mafft necessary):
 	ml mafft
-	mafft --thread -1 input.fasta > output.fasta
+	mafft --thread -1 <samples_florida_gisaid_<date>.fa> > <samples_florida_gisaid_<date>.aln>
 	mafft --retree 3 --maxiterate 10 --thread -1 --nomemsave --op 10 seqsCausingInsertionsInRef.fasta > seqsCausingInsertionsInRef_aligned.fasta
 	mafft --thread 1 --quiet --keeplength --add sequencesNotCausingInsertionsInRef.fa seqsCausingInsertionsInRef_aligned.fasta > msa_<date>.fasta
 
 14. Mask known sequence error sites (with 'N') using mask_aln_using_vcf.py
-	python mask_aln_using_vcf.py -i mas_<date>.fasta -o msa_masked_<date>.fasta -v problematic_sites_sarsCov2.vcf
+	python mask_aln_using_vcf.py -i <samples_florida_gisaid_<date>.aln> -o <samples_florida_gisaid_<date>_masked.aln> -v problematic_sites_sarsCov2.vcf
 
 
 
