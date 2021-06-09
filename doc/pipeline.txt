@@ -1,106 +1,119 @@
-## FLACO-BLAST  ###############################################################################
+## FLACO-BLAST  ##########################################################################
+1. Load FLACO environment
+	source /blue/salemi/share/COVIDseq/bin/FLACO
 
-1. Load basement module:
+## The following are performed by Alberto Riva, so need script information: ##############
+2. Metadata information is provided in the form of an Excel sheet and is uploaded into an informal database structure that can be queried.
+
+3. Load basement module:
     ml basemount
 
-2. Create folder to copy files and basemount (must be done in home directory and not in blue):
+4. Create folder to copy files and basemount (must be done in home directory and not in blue):
 	mkdir COVID_FL_<date>
 	basemount COVID_FL_<date>
 	cd COVID_FL_<date>
 	cd Projects/<BaseSpace project name>/AppResults
 
-3. Copy consensus fasta files from Basespace:
+5. Copy consensus fasta files from Basespace:
 	cp ./*/Files/consensus/*.fasta <hipergator dir>
-
-4. Combine fasta for each sample into single fasta file:
-	cat *.fasta <combined.fasta>
 	
-5. Rename sequences so that format similar to GISAID:
-	????
+6. Identify Pangolin lineage for each sequence (if able) and add to separate database with sequence run information.
 
-6. Use python script to filter sequences again (just in case) based on high N content (currently allowing 30%); alternative is faFilterN (using module load ucsc-fafiltern)
-	/blue/salemi/share/flaco/bin/seq_cleaner.py -f 30 <combined_<date>.fasta> <combined_cleaned_<date>.fasta>
-
-7. BLAST against GISAID global database using FLACO procedure, selecting among non-Floridian sequences:
-	upload up-to-date gisaid sequences in /blue/salemi/share/data/GISAID
-
-8. Pull newly added Florida sequences from GISAID database and add to previous fasta:
-	/blue/salemi/share/COVIDseq-data/bin/gisaidfilt.py <gisaid_msa.fasta> -n USA/FL -a 2020-11-25_15 -b 2021-01-31+15  -o <florida_<date>.fasta> 
-	cat <florida_<date>.fa> <combined_cleaned_<date>.fasta> > <samples_florida_<date>.fasta>
+7. Filter sequences based on 1) high N content (currently allowing 30%), 2) full date information (YYMMDD), and 3) coverage (>50x across all sites)
 	
-9. Remove gaps in sequences for blast search:
-	/blue/salemi/share/flaco/bin/seq_cleaner.py -g <samples_florida_<date>.fasta> > <samples_florida_<date>_nogaps.fasta>		
-	
+8. Rename sequences so that format similar to GISAID 
 
-10. Run flaco-blast:
+9. Append fastas to single fasta file for all sequences thus far 
 
-	ml dibig_tools
-	/blue/salemi/share/flaco/bin/flaco_blast.sh makedb <gisaid.fa> USA/FL
-	/blue/salemi/share/flaco/bin/flaco_blast.sh run <samples_florida_<date>_nogaps.fasta> <gisaid.clean.fa>
-	cat <samples_florida_<date>_nogaps.fasta> <gisaid.clean.out.fa> > <samples_florida_gisaid_<date>.fa>
-	
-	
-11. Align sequences using viralmsa:
+## End Alberto Riva ######################################################################
 
-	mkdir <output_dir> 
+10. Querying sequences according to run can be performed using the flacoblastdb query structure:
+	 flacodb.py query -r <Run#> +PangoLineage > <Run#>.txt
+	 awk ‘{print $1}’ <Run#>.txt | tail -n +2 > <Run#>_names.txt
+	 seq_cleaner.py -w <Run#>_names.txt good_dates > <Run#>.fasta &     #Note “good_dates” is an alias
+	   
+11. Meanwhile, extract Floridian sequences from database that correspond to the relevant time frame:
+	gisaidfilt.py msa_<date>.fasta -n USA/FL -a 2020-11-25_15 -b 2021-01-31+15  -o florida_<date>.fasta 
+
+12. Combine in-house sequences with GISAID Floridian sequences:
+	cat <Run#>.fasta florida_<date>.fasta > <Run#>_florida.fasta
+
+13. Remove gaps for BLAST (works better)
+	seq_cleaner.py -g <Run#>_florida.fasta > <Run#>_florida_nogaps.fasta &
+
+14. Meanwhile, remove Floridian sequences from GISAID database:
+	flaco_blast.sh makedb msa_<date>.fasta USA/FL
+
+15. BLAST combined sequences against new GISAID global database (now won't retrieve identical sequences):
+	flaco_blast.sh run <Run#>_florida_nogaps.fasta msa_<date>.clean.fa #Note that this needs to be run in the same folder as the folder containing the dbs from the previous step
+
+16. Combine target sequences with original query sequences
+	cat <Run#>_florida_nogaps.fasta msa_<date>.cleand.out.fa > <Run#>_florida_gisaid.fasta
+		
+## FLACO-BLAST  ##########################################################################
+
+## ALIGNMENT  ############################################################################
+
+17. Align sequences using viralmsa:
+
 	ml viralmsa
-	ViralMSA.py -u -s <samples_florida_gisaid_<date>.fa> -t 4 -e brittany.rife@ufl.edu -o <output_dir> --outfile <samples_florida_gisaid_<date>.aln> -r MN908947
+	ViralMSA.py -s <Run#_florida_gisaid.fa -t 4 -e brittany.rife@ufl.edu -o <output_dir> --outfile <Run#>_florida_gisaid.aln -r MN908947
 	
-12. Check for extensive gaps in sequences	(may need to reduce sed command above)
-	grep -o "-" <samples_florida_gisaid_<date>.aln> | wc -l | awk '$1>300{c++} END{print c+0}'
+18. Check for extensive gaps in sequences	(may need to reduce sed command above)
+	grep -o "-" <Run#>_florida_gisaid.aln | wc -l | awk '$1>300{c++} END{print c+0}'
 
-13. Check for gaps in reference sequence. If found, need to either use mafft or report in metadata file:
-	head -n 2 <samples_florida_gisaid_<date>.aln> | tail -n 1 | grep -o "-" | wc -l
+13. Check for gaps in reference sequence (shouldn't be there). If found, need to either use mafft or report in metadata file:
+	head -n 2 <Run#>_florida_gisaid.aln | tail -n 1 | grep -o "-" | wc -l
 
 13.5 (If mafft necessary):
 	ml mafft
-	mafft --thread -1 <samples_florida_gisaid_<date>.fa> > <samples_florida_gisaid_<date>.aln>
+	mafft --thread -1 <Run#>_florida_gisaid.fasta > <Run#>_florida_gisaid2.fasta
 	mafft --retree 3 --maxiterate 10 --thread -1 --nomemsave --op 10 seqsCausingInsertionsInRef.fasta > seqsCausingInsertionsInRef_aligned.fasta
-	mafft --thread 1 --quiet --keeplength --add sequencesNotCausingInsertionsInRef.fa seqsCausingInsertionsInRef_aligned.fasta > msa_<date>.fasta
+	mafft --thread 1 --quiet --keeplength --add sequencesNotCausingInsertionsInRef.fa seqsCausingInsertionsInRef_aligned.fasta > <Run#>_florida_gisaid.aln
 
 14. Mask known sequence error sites (with 'N') using mask_aln_using_vcf.py
-	python mask_aln_using_vcf.py -i <samples_florida_gisaid_<date>.aln> -o <samples_florida_gisaid_<date>_masked.aln> -v problematic_sites_sarsCov2.vcf
+	python mask_aln_using_vcf.py -i <Run#>_florida_gisaid.aln -o <Run#>_florida_gisaid_masked.aln -v problematic_sites_sarsCov2.vcf
 
-
-
+## ALIGNMENT  ############################################################################
 		
-# Generating initial tree and cluster identification #####################################
+## Generating initial tree and cluster identification ####################################
+
+1.  Create ML tree using IQ-TREE job script (which will automatically run on a fasta file):
+	sbatch iqtree.sh
+
+While IQ-TREE running, can:
 
 1. Create metadata.csv BEFORE next step (pulls information from sequence headers):
 	ml R
 	Rscript <path/to>metadata.R
 
-3. Create a file with dates for later referencing and a variable ("today") from the dates file to help with naming:
+2. Create a file with dates for later referencing and a variable ("today") from the dates file to help with naming:
 	echo $(date +"%Y-%m-%d") > dates.txt
 	today=$( tail -n 1 dates.txt )
-     
-4.  Create ML tree using IQ-TREE job script (which will automatically run on a fasta file):
-	sbatch iqtree.sh
 
-While IQ-TREE running, can:
 	
-	2. Run pangolin on fasta sequences to obtain lineage information
+3. Run pangolin on fasta sequences to obtain lineage information
 		mkdir pangolin_output
 		module load pangolin/2.1.7
 		pangolin -lv # report lineage version information for publication purposes
 		pangolin initial_${today}.fasta -o pangolin_output --outfile initial_${today}_pangolin_out.csv -t 4
 	
-	3. Make sure number of pangolin output sequences is same as fasta (known to be buggy!):
+4. Make sure number of pangolin output sequences is same as fasta (known to be buggy!):
 		grep ">" ./initial_${today}.fasta | wc -l
 		wc -l ./pagolin_output/initial_${today}_pangolin_out.csv
 	
-	4. 	Merge lineage assignments with an existing metadata file (in current folder) using R script:
+5. 	Merge lineage assignments with an existing metadata file (in current folder) using R script:
 		ml R
 		Rscript <path/to>metadata.R	
 	
-	5. Copy FaToVcf to working directory (required for UShER):
+6. Copy FaToVcf to working directory (required for UShER):
 		rsync -aP rsync://hgdownload.soe.ucsc.edu/genome/admin/exe/linux.x86_64/faToVcf .
 		chmod +x faToVcf
 
-6. When tree finished, run DYNAMITE to identify clusters using tree and metadata:
+7. When tree finished, run DYNAMITE to identify clusters using tree and metadata:
 	sbatch dynamite.sh
 	
-7. Create cov_reference folder and copy cov_reference.fasta
+8. Create cov_reference folder and copy cov_reference.fasta
 	mkdir cov_reference
 	cp /path/tocov_reference.fasta ./cov_reference
 
@@ -156,25 +169,10 @@ While IQ-TREE running, can:
 	mkdir ./samples_${today}
 	scp <local folder>/samples_${today}.fasta ./samples_${today}
 
-3. Update metadata file (need sequences in original GISAID format) and will also need to figure something out regarding patient data coming from Melanie:
-	ml R
-	Rscript metadata.R -f ./samples_${today}/samples_${today}.fasta
-
-4. Modify fasta to replace "|" and "/" in sequence names (IQ-TREE and Pangolin do this, which gets frustrating later on):
-	cat ./samples_${today}/samples_${today}.fasta | sed 's$|$_$g' | sed 's$/$_$g' > samples_${today}.fasta
-
-5. Determine lineages for new fasta:
-	cd samples_${today}
-	mkdir pangolin_output
-	ml pangolin/2.1.7
-	pangolin samples_${today}_renamed.fasta -o pangolin_output --outfile samples_${today}_pangolin_out.csv -t 4
-
-6. Update metadata file with pangolin output (lineage information) for new sequence data:
-	ml R
-	Rscript ../metadata.R -f ./samples_${today}/samples_${today}.fasta -l ./samples_${today}/pangolin_output/samples_${today}_pangolin_out.csv
+3. Create csv for metadata pulled from FLACO database (which now includes lineage information)
 	
 7. Add cov_reference to new samples:	
-	cat ./cov_reference/cov_reference.fasta >> samples_${today}/samples_${today}.fasta
+	cat ./cov_reference/cov_reference.fasta > samples_${today}/samples_${today}_ref.fasta
   	
 8. Create vcf for new round of samples:
 	ml python
@@ -194,8 +192,8 @@ While IQ-TREE running, can:
 11. Use R script to evaluate parsimony scores from tsv files and output new fasta files for sequences needing to be placed on trees:
 	cd BPS_${today}
 	ml R
-	Rscript ../branch_support_eval.R 
-
+	Rscript ../branch_support_eval.R
+	
 12. Add reference sequence again to each of the newly generated fasta files:
 	for i in ./*.fasta; do cat ../cov_reference/cov_reference.fasta >> ${i}; done
 
