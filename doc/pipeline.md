@@ -188,7 +188,11 @@
 	cd <Run#>_${today};
 	cat <Run#>_florida_${today}_nogaps.fasta ../flaco-blast/msa_<date>.cleand.out.fa > <Run#>_florida_gisaid_${today}.fasta
 	```
-		
+25. Re-run pangolin
+	```
+	ml pangolin 	
+	pangolin <Run#>_florida_gisaid_${today}.fasta --outfile <Run#>_florida_gisaid_${today}_lineages.csv
+	```	
 # ALIGNMENT OF NEW SEQUENCE DATA ########################################################
 
 25. Align sequences using viralmsa:
@@ -227,10 +231,10 @@ If mafft necessary, see above.
 	```
 	../faToVcf -ref=MN908947.3 <Run#>_florida_gisaid_${today}_masked.aln $<Run#>_florida_gisaid_${today}_masked.vcf	&
 	```		
-16. Officially add samples to all old trees using usher (creating new pb files for today):
+16. Officially add samples to all previous trees using usher (creating new pb files for today):
 	```
 	ml usher;
-	for i in */.tree; do usher -i ${i%_${today}*}_${previous}.pb -v $$<Run#>_florida_gisaid_${today}/$<Run#>_florida_gisaid_${today}_masked.vcf -u -d ${i} -o ${i%_updated}.pb; done	
+	for i in */.tree; do usher -i ${i%_${today}*}_${previous}.pb -v $$<Run#>_florida_gisaid_${today}/$<Run#>_florida_gisaid_${today}_masked.vcf -u -o ${i%_updated}.pb; done	
 	```
 
 9. Compute parsimony score for new samples (vcf) assigned to each annotated tree (.pb files):
@@ -242,40 +246,59 @@ If mafft necessary, see above.
 	```
 	
 10. Previous step will generate parsimony scores in tsv files, which we need to rename and copy to single folder for R analysis:
-	mkdir "BPS_${today}"
+	```
+	mkdir "BPS_${today}";
 	for i in ./*_${today}; do cp ${i}/parsimony-scores.tsv BPS_${today}/${i}_parsimony-scores.tsv; done
+	```
 	
 11. Use R script to evaluate parsimony scores from tsv files and output new fasta files for sequences needing to be placed on trees:
-	cd BPS_${today}
-	ml R
+	```
+	cd BPS_${today};
+	ml R;
 	Rscript ../branch_support_eval.R
+	```
 	
 12. Add reference sequence again to each of the newly generated fasta files:
+	```
 	for i in ./*.fasta; do cat ../cov_reference/cov_reference.fasta >> ${i}; done
+	```
 
 13. Place updated fasta in new folders:
-	for i in ./*.fasta; do mkdir .${i%.fasta}; cp ${i} .${i%.fasta}; done
+	```
+	for i in ./*.fasta; do mkdir .${i%.fasta}; cp ${i} .${i%.fasta}; done;
 	cd ../
+	``
 	
 14. Replace old folders in source.txt file with updated folders:
+	```
 	find . -type d -name "*${today}_updated" > source.txt
+	```
 
 	
 16. Officially add samples to all old trees using usher (creating new pb files for today):
-	ml usher
-	for i in $(cat source.txt); do usher -i ${i%_${today}*}_${previous}.pb -v ${i%_updated}.vcf -u -d ${i} -o ${i%_updated}.pb; done	
+	```
+	ml usher;
+	for i in $(cat source.txt); do usher -i ${i%_${today}*}_${previous}.pb -v ${i%_updated}.vcf -u -d ${i} -o ${i%_updated}.pb; done
+	```	
 	
 17. Not all trees (.pb) are going to be updated with sequences, so need to find all trees without today's date and make a copy of previous pb with today's date:
+	```
 	for i in ./*${previous}.pb; do mv -vn ${i} ${i%_${previous}*}_${today}.pb; done
+	```
 
 18. Move new unannotated tree (.nh) files generated from the previous step into one folder (as well as original combined sample fasta) for characterization:
-	mkdir "trees_${today}"
-	for i in $(cat source.txt); do cp ${i}/*final-tree.nh trees_${today}/${i}.tree; done
+	```
+	mkdir "trees_${today}";
+	for i in $(cat source.txt); do cp ${i}/*final-tree.nh trees_${today}/${i}.tree; done;
 	cp ./samples_${today}/*.fasta trees_${today}
+	```
 	
 19. Run modified DYNAMITE to search for (and prune) clusters within background tree:
+	```
 	cd ./background_${today}
+	```
 	# Need to run on trees_${today}/background.tree though!
+	
 	# Identify clusters that contain new sequence data
 	# Move clusters to main folder (need to come up with new cluster name so not copied, like "_bg")
 	# Prune clusters from tree
