@@ -1,3 +1,7 @@
+# Need to fix:
+1. Need to remove duplicate sequences across flaco-blast runs because usher will actually add new sequence even if already in the tree
+
+
 # Retrieve reference lineages used by pangolin
 
 **Note:** If this already exists, just need to get sequences not already included.
