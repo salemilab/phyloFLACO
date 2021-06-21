@@ -1,15 +1,18 @@
 # Need to fix:
 1. Need to remove duplicate sequences across flaco-blast runs because usher will actually add new sequence even if already in the tree
 
+2. Need to fix issue with multiple-lineage calling in pangolin.
 
-# Retrieve reference lineages used by pangolin
+3. What variant caller is being used by Orlando?
 
-**Note:** If this already exists, just need to get sequences not already included.
+
+# RETRIEVE REFERENCE LINEAGES USED BY PANGOLIN
+
 
 1. Initiate FLACO environment
 
 	```
-	flaco
+	flaco #Note this is an alias
 	```
 	
 2.	Create a file with dates for later referencing and a variable ("today") from the dates file to help with naming:
@@ -49,8 +52,23 @@
 
 	```
 	sbatch ../viralmsa.sh	
+	```
+	
+6. Mask uncertain sites
+
+	```
+	python ../mask_aln_using_vcf.py -i ref_lineages_${today}/*.aln -o ref_lineages_${today}_masked.aln -v ../problematic_sites_sarsCov2.vcf
+	```
+
+6. Create R list of lineage-specific alignments for spike
+
+	```
+	sbatch makeRefSpikeList.sh -r ref_lineages_${today}_masked.aln	
+	```
 	 	
 		
+**Note:** If this already exists, just need to get sequences not already included in alignment above.
+
 
 # ALIGNMENT OF INITAL DATA ##############################################################
 
