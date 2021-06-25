@@ -1,9 +1,9 @@
 # Need to fix:
-1. Need to remove duplicate sequences across flaco-blast runs because usher will actually add new sequence even if already in the tree
+1. Need to check for duplicate sequences across flaco-blast runs because usher will actually add new sequence even if already in the tree (says it doesn't, but I am seeing duplicates)
 
-2. Need to fix issue with multiple-lineage calling in pangolin.
+4. Need to add only reference lineages not already included in folder.
 
-3. What variant caller is being used by Orlando?
+5. Need to consider running pangolin on all data every time!
 
 
 # RETRIEVE REFERENCE LINEAGES USED BY PANGOLIN
@@ -51,10 +51,20 @@
 5. Align using viralmsa
 
 	```
-	sbatch ../viralmsa.sh	
+	file=$(ls *gapstripped.fa)
+	ml viralmsa
+	ViralMSA.py -s $file -t 4 -e brittany.rife@ufl.edu -o ${file%_gapstripped.fa} -r MN908947 
+	
 	```
 	
-6. Mask uncertain sites
+6. Download most recent masked sites vcf:
+
+	```
+	wget https://raw.githubusercontent.com/W-L/ProblematicSites_SARS-CoV2/master/problematic_sites_sarsCov2.vcf
+	```
+**Note** If there is a previous copy of this in the folder, it will rename with an index in the extension, so need to somehow automate replacement of previous version.
+
+7. Mask uncertain sites
 
 	```
 	python ../mask_aln_using_vcf.py -i ref_lineages_${today}/*.aln -o ref_lineages_${today}_masked.aln -v ../problematic_sites_sarsCov2.vcf
@@ -72,7 +82,7 @@
 
 # ALIGNMENT OF INITAL DATA ##############################################################
 
-1. Align sequences using viralmsa:
+1. In the meantime, can align sequences using viralmsa:
 
 	```
 	cd initial_data  
@@ -101,7 +111,7 @@
 	mafft --thread 1 --quiet --keeplength --add sequencesNotCausingInsertionsInRef.fa seqsCausingInsertionsInRef_aligned.fasta > <Run#>_florida_gisaid.aln
 	```
 
-4. Change first sequence header to just MN908947.3:
+4. Change first sequence header to just MN908947.3 (spaces in original name wreak havoc downstream):
 	
 	```
 	var=">MN908947.3"
@@ -129,15 +139,28 @@
 	
 	```
 	cd <initial>
-	sbatch ../../iqtree.sh
+	file=$(ls *masked.aln)
+	ml iq-tree
+	iqtree2 -s $file -bb 1000 -nt AUTO -m GTR+I+G
 	```
 
 8. Pull metadata from FLACODB:
 	
 	```
 	cd ../
-	sbatch metadata.sql.sh
+	sqlite3 -header -separator $'\t' $FLACO_DB \
+"select SampleName, SamplingDate, DaysAfterBaseline, Location, City, County, ZipCode, Sex, Age, DiseaseOutcome,CoMorbidityFactors, ViralLoad \
+  from Samples \
+  where SampleName like 'Shands-%' or \
+	SampleName like 'Path-%' or \
+	SampleName like 'STP-%'or \
+	SampleName like 'BayCare-%'or \
+	SampleName like 'Miami-%' or \
+	SampleName like 'FDOH-%' or \
+	SampleName like 'FtMyers-%';" > metadata_${today}.txt &
+	flacodb.py query -x Haiti,Haiti2,Haiti3,MD +PangoLineage +HiDepthFrac50 > lineages_${today}.txt
 	```
+**Note** groups are constantly changing, so need to make sure only grabbing Florida sequences.
 
 9. Create metadata.csv used for DYNAMITE:
 	
@@ -319,17 +342,11 @@
 
 If mafft necessary, see above.
 
-28. Mask known sequence error sites (with 'N') using mask_aln_using_vcf.py
-	
-	```
-	python ../mask_aln_using_vcf.py -i <Run#>_florida_gisaid_${today}/<Run#>_florida_gisaid_${today}.aln -o <Run#>_florida_gisaid_${today}_masked.aln -v ../problematic_sites_sarsCov2.vcf
-	```
-
 29. Change first sequence header to just MN908947.3:
 	
 	```
 	var=">MN908947.3";\
-	sed -i "1s/.*/$var/" <Run#>_florida_gisaid_${today}_masked.aln
+	sed -i "1s/.*/$var/" <Run#>_florida_gisaid_${today}/<Run#>_florida_gisaid_${today}.aln
 	``` 
 		
 # TREE/ALN PROCESSING USING USHER #######################################################
@@ -338,7 +355,7 @@ If mafft necessary, see above.
 32. Transform fasta sub-alignments to vcf
 	
 	```
-	../faToVcf -ref=MN908947.3 <Run#>_florida_gisaid_${today}_masked.aln $<Run#>_florida_gisaid_${today}_masked.vcf	&
+	../faToVcf -maskSites=../problematic_sites_sarsCov2.vcf -ref=MN908947.3 <Run#>_florida_gisaid_${today}_masked.aln $<Run#>_florida_gisaid_${today}_masked.vcf	&
 	```		
 
 16. Officially add samples to all previous trees using usher (creating new pb files for today):
